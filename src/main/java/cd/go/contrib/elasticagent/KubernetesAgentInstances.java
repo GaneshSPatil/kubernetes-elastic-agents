@@ -39,6 +39,7 @@ public class KubernetesAgentInstances implements AgentInstances<KubernetesInstan
     private final ConcurrentHashMap<String, KubernetesInstance> instances = new ConcurrentHashMap<>();
     public Clock clock = Clock.DEFAULT;
     final Semaphore semaphore = new Semaphore(0, true);
+    private boolean refreshed;
 
     private KubernetesClientFactory factory;
     private KubernetesInstanceFactory kubernetesInstanceFactory;
@@ -145,21 +146,23 @@ public class KubernetesAgentInstances implements AgentInstances<KubernetesInstan
 
     @Override
     public void refreshAll(PluginSettings properties) {
-        LOG.debug("[Refresh Instances] Syncing k8s elastic agent pod information for cluster {}.", properties);
-        KubernetesClient client = factory.client(properties);
-        PodList list = client.pods().list();
+        if (!refreshed) {
+            LOG.debug("[Refresh Instances] Syncing k8s elastic agent pod information for cluster {}.", properties);
+            KubernetesClient client = factory.client(properties);
+            PodList list = client.pods().list();
 
-        instances.clear();
-        for (Pod pod : list.getItems()) {
-            Map<String, String> podLabels = pod.getMetadata().getLabels();
-            if (podLabels != null) {
-                if (StringUtils.equals(Constants.KUBERNETES_POD_KIND_LABEL_VALUE, podLabels.get(Constants.KUBERNETES_POD_KIND_LABEL_KEY))) {
-                    register(kubernetesInstanceFactory.fromKubernetesPod(pod));
+            instances.clear();
+            for (Pod pod : list.getItems()) {
+                Map<String, String> podLabels = pod.getMetadata().getLabels();
+                if (podLabels != null) {
+                    if (StringUtils.equals(Constants.KUBERNETES_POD_KIND_LABEL_VALUE, podLabels.get(Constants.KUBERNETES_POD_KIND_LABEL_KEY))) {
+                        register(kubernetesInstanceFactory.fromKubernetesPod(pod));
+                    }
                 }
             }
+            LOG.info(String.format("[refresh-pod-state] Pod information successfully synced. All(Running/Pending) pod count is %d.", instances.size()));
+            refreshed = true;
         }
-
-        LOG.info(String.format("[refresh-pod-state] Pod information successfully synced. All(Running/Pending) pod count is %d.", instances.size()));
     }
 
     @Override
